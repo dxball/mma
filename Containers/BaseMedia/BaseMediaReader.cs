@@ -38,8 +38,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Media.Container;
 
-namespace Media.Container.BaseMedia
+namespace Media.Containers.BaseMedia
 {
     /// <summary>
     /// Represents the logic necessary to read ISO Complaint Base Media Format Files.
@@ -179,7 +180,7 @@ namespace Media.Container.BaseMedia
         public static byte[] ReadIdentifier(Stream stream)
         {
             //if (Remaining < IdentifierSize) return null;
-            
+
             byte[] identifier = new byte[IdentifierSize];
 
             stream.Read(identifier, 0, IdentifierSize);
@@ -220,7 +221,7 @@ namespace Media.Container.BaseMedia
 
             byte[] identifier = ReadIdentifier(this);
 
-            return  new Node(this, identifier, lengthBytesRead, Position, length, length <= Remaining);
+            return new Node(this, identifier, lengthBytesRead, Position, length, length <= Remaining);
         }
 
         public override IEnumerator<Node> GetEnumerator()
@@ -229,12 +230,12 @@ namespace Media.Container.BaseMedia
             {
                 Node next = ReadNext();
                 if (next == null) yield break;
-                
+
                 yield return next;
 
                 //Parent boxes contain other boxes so do not skip them, parse right into their data
                 if (ParentBoxes.Contains(ToFourCharacterCode(next.Identifier))) continue;
-                
+
                 //Here using MinimumSize is technically not correct, it should be `Skip(next.Size - IdentifierSize + lengthBytesCount);`
                 //When the Node only reflects the data count then this would be simply `Skip(next.Size);`
                 Skip(next.DataSize - MinimumSize);
@@ -284,9 +285,9 @@ namespace Media.Container.BaseMedia
         }
 
         ulong? m_TimeScale;
-        
+
         TimeSpan? m_Duration;
-        
+
         public TimeSpan Duration
         {
             get
@@ -300,7 +301,8 @@ namespace Media.Container.BaseMedia
 
         public float PlayRate
         {
-            get { 
+            get
+            {
                 if (!m_PlayRate.HasValue) ParseMovieHeader();
                 return m_PlayRate.Value;
             }
@@ -358,7 +360,7 @@ namespace Media.Container.BaseMedia
                 switch (version)
                 {
                     case 0:
-                        {                            
+                        {
                             created = Common.Binary.ReadU32(mediaHeader.RawData, offset, BitConverter.IsLittleEndian);
 
                             offset += 4;
@@ -378,7 +380,7 @@ namespace Media.Container.BaseMedia
 
                     case 1:
                         {
-                            
+
                             created = Common.Binary.ReadU64(mediaHeader.RawData, offset, BitConverter.IsLittleEndian);
 
                             offset += 4;
@@ -460,7 +462,7 @@ namespace Media.Container.BaseMedia
             byte[] codecIndication = Utility.Empty;
 
             //Get Duration from mdhd, some files have more then one mdhd.
-            if(!m_Duration.HasValue) ParseMovieHeader();
+            if (!m_Duration.HasValue) ParseMovieHeader();
 
             //For each trak box in the file
             //TODO Make only a single pass, the data required should always be in the RawData of trakBox
@@ -560,7 +562,7 @@ namespace Media.Container.BaseMedia
                     offset += 4;
 
                     modified = Common.Binary.ReadU32(trakHead.RawData, offset, BitConverter.IsLittleEndian);
-                    
+
                     offset += 4;
                 }
                 else
@@ -570,7 +572,7 @@ namespace Media.Container.BaseMedia
                     offset += 8;
 
                     modified = Common.Binary.ReadU64(trakHead.RawData, offset, BitConverter.IsLittleEndian);
-                    
+
                     offset += 8;
                 }
 
@@ -589,7 +591,7 @@ namespace Media.Container.BaseMedia
                 else
                 {
                     duration = Common.Binary.ReadU64(trakHead.RawData, offset, BitConverter.IsLittleEndian);
-                    
+
                     offset += 8;
                 }
 
@@ -610,10 +612,10 @@ namespace Media.Container.BaseMedia
 
                 //Skip int and Matrix
                 offset += 40;
-                
+
                 //Width
                 width = Common.Binary.Read32(trakHead.RawData, offset, BitConverter.IsLittleEndian) / ushort.MaxValue;
-                
+
                 offset += 4;
                 //Height
 
@@ -922,10 +924,10 @@ namespace Media.Container.BaseMedia
                         continue;
 
                     }
-                    
+
                 }
 
-                
+
 
                 //Also contains channels and bitDept info
 
