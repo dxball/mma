@@ -38,10 +38,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Media.Container.Mpeg
+namespace Media.Containers.Mpeg
 {
     /// <summary>
     /// Represents the logic necessary to read Mpeg Transport Streams.
+    /// Transport Stream is specified in MPEG-2 Part 1, Systems (formally known as ISO/IEC standard 13818-1 or ITU-T Rec. H.222.0).[3]
+    /// Transport stream specifies a container format encapsulating packetized elementary streams, with error correction and stream synchronization features for maintaining transmission integrity when the signal is degraded.
     /// </summary>
     public class TransportStreamReader : Media.Container.MediaFileStream, Media.Container.IMediaContainer
     {
@@ -242,7 +244,7 @@ namespace Media.Container.Mpeg
 
         #region AdaptationField
 
-        public static AdaptationFieldFlags GetAdaptationFieldFlags(Node tsUnit) { return (AdaptationFieldFlags)GetAdaptationFieldData(tsUnit)[0]; }
+        public static AdaptationFieldFlags GetAdaptationFieldFlags(Media.Container.Node tsUnit) { return (AdaptationFieldFlags)GetAdaptationFieldData(tsUnit)[0]; }
 
         public static byte[] GetAdaptationFieldData(Container.Node tsUnit)
         {
@@ -384,7 +386,7 @@ namespace Media.Container.Mpeg
         ///// <returns></returns>
         //public override long Skip(long count) { return base.Skip(count); }
 
-        public IEnumerable<Node> ReadUnits(long offset, long count, params PacketIdentifier[] names)
+        public IEnumerable<Media.Container.Node> ReadUnits(long offset, long count, params PacketIdentifier[] names)
         {
             long position = Position;
 
@@ -409,11 +411,11 @@ namespace Media.Container.Mpeg
             yield break;
         }
 
-        public Node ReadUnit(PacketIdentifier name, long offset = 0)
+        public Media.Container.Node ReadUnit(PacketIdentifier name, long offset = 0)
         {
             long positionStart = Position;
 
-            Node result = ReadUnits(offset, Length - offset, name).FirstOrDefault();
+            Media.Container.Node result = ReadUnits(offset, Length - offset, name).FirstOrDefault();
 
             Position = positionStart;
 
@@ -434,7 +436,7 @@ namespace Media.Container.Mpeg
             //Determine the length of the packet and amount of bytes required to read the length
             int length = UnitLength - IdentifierSize, lengthSize = LengthSize;
 
-            //Determine if needs to be read here, certain streams might have CRC etc.
+            //Should be part of Node Data to be more efficient
 
             //Check for varible length field
             if ((last & AdaptationFieldMask) != 0)
@@ -505,6 +507,8 @@ namespace Media.Container.Mpeg
         public override byte[] GetSample(Container.Track track, out TimeSpan duration)
         {
             throw new NotImplementedException();
-        }        
+        }
+
+        ////GetPacketizedElementaryStreams?
     }
 }
