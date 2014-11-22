@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Media.Container;
 
-namespace Media.Container.Real
+namespace Media.Containers.Real
 {
     //Reads .rm files
     //http://wiki.multimedia.cx/?title=RealMedia
@@ -42,6 +43,8 @@ namespace Media.Container.Real
         public RealReader(string filename, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(filename, access) { }
 
         public RealReader(Uri source, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(source, access) { }
+
+        public RealReader(System.IO.FileStream source, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(source, access) { }
 
         void ParseHeader()
         {

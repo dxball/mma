@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Media.Container;
 
-namespace Media.Container.Gxf
+namespace Media.Containers.Gxf
 {
     //Namespace SMPTE ?
     // SMPTE 360M-2001: General Exchange Format (GXF)
@@ -72,6 +73,8 @@ namespace Media.Container.Gxf
         public GxfReader(string filename, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(filename, access) { }
 
         public GxfReader(Uri source, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(source, access) { }
+
+        public GxfReader(System.IO.FileStream source, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(source, access) { }
 
         public IEnumerable<Node> ReadElements(long offset, long count, params Identifier[] identifiers)
         {
