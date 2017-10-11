@@ -103,28 +103,28 @@ namespace Media.Containers.Ogg
         {
             if (node == null) throw new ArgumentNullException("node");
 
-            return Common.Binary.Read64(node.Identifier, 6, !BitConverter.IsLittleEndian);
+            return Common.Binary.Read64(node.Identifier, 6, Media.Common.Binary.IsBigEndian);
         }
 
         public static int GetSerialNumber(Node node)
         {
             if (node == null) throw new ArgumentNullException("node");
 
-            return (int)Common.Binary.ReadU32(node.Identifier, 14, !BitConverter.IsLittleEndian);
+            return (int)Common.Binary.ReadU32(node.Identifier, 14, Media.Common.Binary.IsBigEndian);
         }
 
         public static int GetSequenceNumber(Node node)
         {
             if (node == null) throw new ArgumentNullException("node");
 
-            return (int)Common.Binary.ReadU32(node.Identifier, 18, !BitConverter.IsLittleEndian);
+            return (int)Common.Binary.ReadU32(node.Identifier, 18, Media.Common.Binary.IsBigEndian);
         }
 
         public static int GetCrc(Node node)
         {
             if (node == null) throw new ArgumentNullException("node");
 
-            return (int)Common.Binary.ReadU32(node.Identifier, 22, !BitConverter.IsLittleEndian);
+            return (int)Common.Binary.ReadU32(node.Identifier, 22, Media.Common.Binary.IsBigEndian);
         }
 
         #endregion
@@ -135,18 +135,20 @@ namespace Media.Containers.Ogg
 
         public OggReader(System.IO.FileStream source, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(source, access) { }
 
+        public OggReader(Uri uri, System.IO.Stream source, int bufferSize = 8192) : base(uri, source, null, bufferSize, true) { }      
+  
         public override string ToTextualConvention(Node page)
         {
             if (page.Master.Equals(this))
             {
                 //Get the capture pattern from the identifier which should equal OggSxxxx
-                CapturePattern result = (CapturePattern)Common.Binary.ReadU64(page.Identifier, 0, !BitConverter.IsLittleEndian);
+                CapturePattern result = (CapturePattern)Common.Binary.ReadU64(page.Identifier, 0, Media.Common.Binary.IsBigEndian);
                 
                 //If there is no data then just unmask the capture pattern by limiting it to 4 bytes
                 if (page.DataSize <= 0) return ((CapturePattern)((ulong)result & uint.MaxValue)).ToString();
                 
                 //Read the capture pattern from the data
-                result = (CapturePattern)Common.Binary.ReadU64(page.Data, 0, !BitConverter.IsLittleEndian);
+                result = (CapturePattern)Common.Binary.ReadU64(page.Data, 0, Media.Common.Binary.IsBigEndian);
                 
                 //Determine if this is a known capture pattern.
                 switch (result)
@@ -176,14 +178,14 @@ namespace Media.Containers.Ogg
                 if (headerFlags.HasValue && GetHeaderType(page) != headerFlags.Value) continue;
 
                 //Get the pattern
-                CapturePattern found = (CapturePattern)Common.Binary.ReadU64(page.Identifier, 0, !BitConverter.IsLittleEndian);
+                CapturePattern found = (CapturePattern)Common.Binary.ReadU64(page.Identifier, 0, Media.Common.Binary.IsBigEndian);
                 
                 //If contained the found or the unmasked found then return the page
                 if (names == null || names.Count() == 0 || names.Any(n => n == found || n == (CapturePattern)((ulong)found & uint.MaxValue))) yield return page;
                 else if( page.DataSize > 0)
                 {
                     //Get the capture pattern from the data
-                    found = (CapturePattern)Common.Binary.ReadU64(page.Data, 0, !BitConverter.IsLittleEndian);
+                    found = (CapturePattern)Common.Binary.ReadU64(page.Data, 0, Media.Common.Binary.IsBigEndian);
                     
                     //See if the given list contained it
                     if(names.Contains(found)) yield return page;
@@ -227,7 +229,7 @@ namespace Media.Containers.Ogg
                 Read(identifier, 0, 4);
 
                 //Decode the capture pattern at the beginning
-                found = (CapturePattern)(Common.Binary.ReadU64(identifier, 0, !BitConverter.IsLittleEndian) & uint.MaxValue);
+                found = (CapturePattern)(Common.Binary.ReadU64(identifier, 0, Media.Common.Binary.IsBigEndian) & uint.MaxValue);
             }
             while (found != CapturePattern.Oggs && Position - offset < MinimumReadSize); //While it was not found within the IdentiferSize
 
@@ -235,7 +237,7 @@ namespace Media.Containers.Ogg
             if (identifier[PageVersionOffset] > 0) throw new InvalidOperationException("Only Version 0 is Defined.");
 
             //Read the rest of the identifier.
-            Read(identifier, 4, MinimumReadSize - 4); //23 more
+            offset += Read(identifier, 4, MinimumReadSize - 4); //23 more
 
             // (segment_table) @ 27 - number_page_segments Bytes containing the lacing
             //values of all segments in this page.  Each Byte contains one
@@ -266,6 +268,8 @@ namespace Media.Containers.Ogg
                 //While there is a byte to read and there is a non terminating value read
                 while (Remaining > 0 && (read = ReadByte()) > 0)
                 {
+                    ++offset;
+
                     //Increase the pageSegmentCount
                     pageSegmentCount += read;
                     
@@ -283,6 +287,10 @@ namespace Media.Containers.Ogg
             {
                 //Read a byte
                 int read = ReadByte();
+
+                if (read == -1) break;
+
+                ++offset;
 
                 //Increse length
                 length += read;
@@ -319,17 +327,22 @@ namespace Media.Containers.Ogg
 
         Dictionary<int, Node> m_PageBegins, m_PageEnds;
 
+        Common.Collections.Generic.ConcurrentThesaurus<int, Node> m_InfoPages;
+
         void ParsePages()
         {
 
-            if (m_PageBegins != null || m_PageEnds != null) return;
+            if (m_PageBegins != null || m_PageEnds != null || m_InfoPages != null) return;
 
             m_PageBegins = new Dictionary<int,Node>();
 
             m_PageEnds = new Dictionary<int, Node>();
 
+            m_InfoPages = new Common.Collections.Generic.ConcurrentThesaurus<int, Node>();
+
             long position = Position;
 
+            //Seek to the beginning until changes are made to allow pages to be parsed as interating with ReadNext
             using (var root = Root) Position = root.Offset;
 
             //Iterate all pages
@@ -341,7 +354,7 @@ namespace Media.Containers.Ogg
                     //Ensure not a skeleton or index
 
                     //Decode the CapturePattern from the data
-                    CapturePattern pattern = (CapturePattern)(Common.Binary.ReadU64(page.Data, 0, !BitConverter.IsLittleEndian));
+                    CapturePattern pattern = (CapturePattern)(Common.Binary.ReadU64(page.Data, 0, Media.Common.Binary.IsBigEndian));
 
                     //Determine what to do
                     switch (pattern)
@@ -365,19 +378,24 @@ namespace Media.Containers.Ogg
                     //Determine if this is a FirstPage and add it (Should only be one, may have to check contains for malformed streams, Could then use the result of contains rather then Count to determine end)
                     if (pageHeaderType.HasFlag(HeaderType.FirstPage)) m_PageBegins.Add(serial, page);
 
-                    //Only need to do this if we are missing and end page.
-                    if (m_PageBegins.Count > m_PageEnds.Count)
-                    {
-                        //Determine if a packet ends on this page
-                        long grainulePosition = Common.Binary.Read64(page.Identifier, 6, !BitConverter.IsLittleEndian);
+                    //If no begin page was found then we don't need anything
+                    if (m_PageBegins.Count == 0) continue;
 
-                        //If so (technically should be != -1)
-                        if (grainulePosition >= 0)
-                        {
-                            //If we already had an end page just update it (should check that m_PageBegins has the serial also)
-                            if (m_PageEnds.ContainsKey(serial)) m_PageEnds[serial] = page;
-                            else m_PageEnds.Add(serial, page); //otherwise its added
-                        }
+                    //Check for info page which may have comments
+                    if (m_InfoPages.Count < m_PageBegins.Count && page.Data[0] == PacketTypeComment) m_InfoPages.Add(serial, page);
+
+                    //Determine if a packet ends on this page
+                    long grainulePosition = Common.Binary.Read64(page.Identifier, 6, Media.Common.Binary.IsBigEndian);
+
+                    //If so (technically should be != -1)
+                    if (grainulePosition >= 0)
+                    {
+                        //Should compare existing grainule position to ensure it is greater?
+                        //m_PageEnds.TryGetValue(serial)
+
+                        //If we already had an end page just update it (should check that m_PageBegins has the serial also)
+                        if (m_PageEnds.ContainsKey(serial)) m_PageEnds[serial] = page;
+                        else m_PageEnds.Add(serial, page); //otherwise its added
                     }
                 }
             }
@@ -410,7 +428,7 @@ namespace Media.Containers.Ogg
 
                 Sdp.MediaType mediaType = Sdp.MediaType.unknown;
 
-                byte[] codecIndication = Utility.Empty;
+                byte[] codecIndication = Media.Common.MemorySegment.EmptyBytes;
 
                 double rate = 0, duration = 0;
 
@@ -431,11 +449,11 @@ namespace Media.Containers.Ogg
                 {
                     //Gainule Position
                     //A Special value of -1 indicates that no packets finish on this page.
-                    duration = Common.Binary.Read64(endPage.Identifier, 6, !BitConverter.IsLittleEndian);
+                    duration = Common.Binary.Read64(endPage.Identifier, 6, Media.Common.Binary.IsBigEndian);
                 }
 
                 //Sequence Number
-                sampleCount = Common.Binary.Read32(endPage.Identifier, 18, !BitConverter.IsLittleEndian);
+                sampleCount = Common.Binary.Read32(endPage.Identifier, 18, Media.Common.Binary.IsBigEndian);
 
                 //How about a Generic 'XCODECMAP' mapping?
                 //It would make all mappings easier to decode
@@ -521,7 +539,7 @@ namespace Media.Containers.Ogg
                                         if (offset == 76) offset = 164;
 
                                         //Read rate
-                                        rate = Common.Binary.Read64(startPage.Data, offset, !BitConverter.IsLittleEndian) / 10000;
+                                        rate = Common.Binary.Read64(startPage.Data, offset, Media.Common.Binary.IsBigEndian) / 10000;
 
                                         //33 was used to 'smooth' playback with audio in OGM?
                                         if (rate == 33) rate = 30;
@@ -535,12 +553,12 @@ namespace Media.Containers.Ogg
                                         //Note that these are reversed from the BitmapInfoHeader
 
                                         //Read 32 Height
-                                        height = (int)Common.Binary.ReadU32(startPage.Data, offset, !BitConverter.IsLittleEndian);
+                                        height = (int)Common.Binary.ReadU32(startPage.Data, offset, Media.Common.Binary.IsBigEndian);
 
                                         offset += 4;
 
                                         //Read 32 Width
-                                        width = (int)Common.Binary.ReadU32(startPage.Data, offset, !BitConverter.IsLittleEndian);
+                                        width = (int)Common.Binary.ReadU32(startPage.Data, offset, Media.Common.Binary.IsBigEndian);
 
                                         offset += 4;
 
@@ -548,7 +566,7 @@ namespace Media.Containers.Ogg
                                         //Read 16 panes 
 
                                         //Read 16 BitDepth is possible
-                                        if (offset < max) bitDepth = (byte)(int)Common.Binary.ReadU16(startPage.Data, offset == 184 ? 186 : offset, !BitConverter.IsLittleEndian);
+                                        if (offset < max) bitDepth = (byte)(int)Common.Binary.ReadU16(startPage.Data, offset == 184 ? 186 : offset, Media.Common.Binary.IsBigEndian);
 
                                         break;
                                     }
@@ -583,15 +601,15 @@ namespace Media.Containers.Ogg
 
                                         //WaveFormat (EX) 
                                         //*(ogg_int16_t*)(p+126),  // channels
-                                        channels = (byte)Common.Binary.ReadU16(startPage.Data, offset, !BitConverter.IsLittleEndian);
+                                        channels = (byte)Common.Binary.ReadU16(startPage.Data, offset, Media.Common.Binary.IsBigEndian);
                                         offset += 2;
                                         //*(ogg_int16_t*)(p+136),  // blockalign
                                         //*(ogg_int32_t*)(p+132),  // avgbytespersec
                                         //*(ogg_int32_t*)(p+128),  // samplespersec
-                                        rate = (byte)Common.Binary.ReadU16(startPage.Data, offset, !BitConverter.IsLittleEndian);
+                                        rate = (byte)Common.Binary.ReadU16(startPage.Data, offset, Media.Common.Binary.IsBigEndian);
                                         offset += 2;
                                         //*(ogg_int16_t*)(p+138),  // bitspersample
-                                        bitDepth = (byte)Common.Binary.ReadU16(startPage.Data, offset, !BitConverter.IsLittleEndian);
+                                        bitDepth = (byte)Common.Binary.ReadU16(startPage.Data, offset, Media.Common.Binary.IsBigEndian);
                                         //p+142,				   // extradata
                                         //*(ogg_int16_t*)(p+140),  // extrasize
                                         //*(ogg_int32_t*)(p+40));  // buffersize
@@ -614,7 +632,7 @@ namespace Media.Containers.Ogg
                                         channels = startPage.Data[11];
 
                                         //Sampling rate
-                                        rate = Common.Binary.Read32(startPage.Data, 12, !BitConverter.IsLittleEndian);
+                                        rate = Common.Binary.Read32(startPage.Data, 12, Media.Common.Binary.IsBigEndian);
 
                                         /* http://www.xiph.org/vorbis/doc/Vorbis_I_spec.html
                                             All three fields set to the same value implies a fixed rate, or tightly bounded, nearly fixed-rate bitstream
@@ -630,7 +648,7 @@ namespace Media.Containers.Ogg
                                         //bitrate nominal 4 8 bits in a byte
 
                                         //bitRate
-                                        bitDepth = (byte)((Common.Binary.ReadU32(startPage.Data, 20, !BitConverter.IsLittleEndian) + 7) / Utility.MicrosecondsPerMillisecond);
+                                        bitDepth = (byte)((Common.Binary.ReadU32(startPage.Data, 20, Media.Common.Binary.IsBigEndian) + 7) / Media.Common.Extensions.TimeSpan.TimeSpanExtensions.MicrosecondsPerMillisecond);
 
                                         //bitrate lower 4
 
@@ -639,85 +657,18 @@ namespace Media.Containers.Ogg
                             }
 
                             break;
-                        }
-                    case PacketTypeComment:// Vorbis Comment
-                        {
-                            //Check for vorbis
-                            //string vorbis = System.Text.Encoding.UTF8.GetString(startPage.Data, 1, 6);
-
-                            int offset = 7;
-
-                            //Read Vendor Length
-                            int vendorLength = Common.Binary.Read32(startPage.Data, offset, !BitConverter.IsLittleEndian);
-
-                            offset += 4;
-
-                            offset += vendorLength;
-
-                            //Determine if there is a comment list
-                            if (offset + 4 < startPage.DataSize)
-                            {
-                                //Read User Comment List
-                                int userCommentListLength = Common.Binary.Read32(startPage.Data, offset, !BitConverter.IsLittleEndian);
-
-                                //Move the offset
-                                offset += 4;
-
-                                //Read User Comment List if available
-                                if (userCommentListLength > 0)
-                                {
-                                    //While there is data to consume
-                                    while (offset + 4 < startPage.DataSize)
-                                    {
-
-                                        //Read the item length
-                                        int itemLength = Common.Binary.Read32(startPage.Data, offset, !BitConverter.IsLittleEndian);
-
-                                        //Move the offset
-                                        offset += 4;
-
-                                        //Get the string
-                                        string item = System.Text.Encoding.UTF8.GetString(startPage.Data, offset, itemLength);
-
-                                        //Split it
-                                        string[] parts = item.Split((char)Common.ASCII.EqualsSign);
-
-                                        //If there are 2 parts decide what to do.
-                                        if (parts.Length > 1)
-                                        {
-                                            switch (parts[0].ToLowerInvariant())
-                                            {
-                                                case "lwing_gain":
-                                                    {
-                                                        mediaType = Sdp.MediaType.audio;
-                                                        rate = double.Parse(parts[1]);
-                                                        break;
-                                                    }
-                                                case "title":
-                                                    {
-                                                        title = parts[1];
-                                                        break;
-                                                    }
-                                                default: break;
-                                            }
-                                        }
-
-                                        //Move the offset
-                                        offset += itemLength;
-                                    }
-                                }
-                            }
-                            
-                            break;
-                        }
+                        }                    
                     case PacketTypeCodeBook:// Vorbis Codebook
                         {
                             //Assume Media Type
                             mediaType = Sdp.MediaType.audio;
+
                             //Assume Codec
-                            codecIndication = BitConverter.GetBytes((short)Media.Utility.WaveFormatId.Vorbis1);
+                            codecIndication = BitConverter.GetBytes((short)0x674f);//Vorbis 1 from Audio.WaveFormatID
+
                             //Assume rate
                             rate = 8000;
+
                             break;
                         }
                     case 0x80:
@@ -735,24 +686,24 @@ namespace Media.Containers.Ogg
                                 //Theora Mapping
 
                                 //Resolution
-                                //width = Common.Binary.Read16(page.Raw, 10, BitConverter.IsLittleEndian) << 4,
-                                //height = Common.Binary.Read16(page.Raw, 12, BitConverter.IsLittleEndian) << 4;
+                                //width = Common.Binary.Read16(page.Raw, 10, Common.Binary.IsLittleEndian) << 4,
+                                //height = Common.Binary.Read16(page.Raw, 12, Common.Binary.IsLittleEndian) << 4;
 
                                 //Display Resolution
-                                width = (int)Common.Binary.ReadU24(startPage.Data, 14, BitConverter.IsLittleEndian);
-                                height = (int)Common.Binary.ReadU24(startPage.Data, 17, BitConverter.IsLittleEndian);
+                                width = (int)Common.Binary.ReadU24(startPage.Data, 14, Common.Binary.IsLittleEndian);
+                                height = (int)Common.Binary.ReadU24(startPage.Data, 17, Common.Binary.IsLittleEndian);
 
                                 //Offset
                                 //X page.Raw[20]
                                 //Y page.Raw[21]
 
                                 //Frames Per Seconds 4 byte fps_numerator, 4 byte fps_denominator          
-                                rate = Common.Binary.Read64(startPage.Data, 22, BitConverter.IsLittleEndian);
-                                rate /= Common.Binary.Read64(startPage.Data, 26, BitConverter.IsLittleEndian);
+                                rate = Common.Binary.Read64(startPage.Data, 22, Common.Binary.IsLittleEndian);
+                                rate /= Common.Binary.Read64(startPage.Data, 26, Common.Binary.IsLittleEndian);
 
                                 //4 byte aspect_numerator        
                                 //4 byte aspect_denominator                              
-                                //double aspectRation = Common.Binary.Read64(page.Raw, 28, BitConverter.IsLittleEndian);
+                                //double aspectRation = Common.Binary.Read64(page.Raw, 28, Common.Binary.IsLittleEndian);
 
                                 //Color Space
                                 //bitDepth = page.Raw[36];
@@ -825,9 +776,9 @@ namespace Media.Containers.Ogg
                             {
                                 mediaType = Sdp.MediaType.audio;
 
-                                rate = Common.Binary.Read32(startPage.Data, 36, !BitConverter.IsLittleEndian);
+                                rate = Common.Binary.Read32(startPage.Data, 36, Media.Common.Binary.IsBigEndian);
 
-                                channels = (byte)Common.Binary.ReadU32(startPage.Data, 40, !BitConverter.IsLittleEndian);
+                                channels = (byte)Common.Binary.ReadU32(startPage.Data, 40, Media.Common.Binary.IsBigEndian);
 
                                 //frame_size
 
@@ -877,7 +828,7 @@ namespace Media.Containers.Ogg
                             codecIndication = startPage.Data.Skip(4).Take(4).ToArray();
 
                             //Sample rate
-                            rate = Common.Binary.ReadU32(startPage.Data, 12, BitConverter.IsLittleEndian);
+                            rate = Common.Binary.ReadU32(startPage.Data, 12, Common.Binary.IsLittleEndian);
 
                             //Number of significant bits
                             bitDepth = startPage.Data[15];
@@ -946,13 +897,13 @@ namespace Media.Containers.Ogg
                                 mediaType = Sdp.MediaType.audio;
 
                                 //rate
-                                rate = Common.Binary.ReadU32(startPage.Data, 36, BitConverter.IsLittleEndian);
+                                rate = Common.Binary.ReadU32(startPage.Data, 36, Common.Binary.IsLittleEndian);
 
                                 //channels
-                                channels = (byte)Common.Binary.ReadU32(startPage.Data, 48, BitConverter.IsLittleEndian);
+                                channels = (byte)Common.Binary.ReadU32(startPage.Data, 48, Common.Binary.IsLittleEndian);
 
                                 //bitrate
-                                bitDepth = (byte)Common.Binary.ReadU32(startPage.Data, 52, BitConverter.IsLittleEndian);
+                                bitDepth = (byte)Common.Binary.ReadU32(startPage.Data, 52, Common.Binary.IsLittleEndian);
                             }
                             else //SPOTS
                             {
@@ -994,9 +945,9 @@ namespace Media.Containers.Ogg
 
                                 codecIndication = startPage.Data.Skip(32).Take(8).ToArray();
 
-                                width = Common.Binary.Read16(startPage.Data, 40, !BitConverter.IsLittleEndian);
+                                width = Common.Binary.Read16(startPage.Data, 40, Media.Common.Binary.IsBigEndian);
 
-                                height = Common.Binary.Read16(startPage.Data, 42, !BitConverter.IsLittleEndian);
+                                height = Common.Binary.Read16(startPage.Data, 42, Media.Common.Binary.IsBigEndian);
 
                                 //Attain additional info from data within?
                             }
@@ -1049,14 +1000,14 @@ namespace Media.Containers.Ogg
                               * 0x80808083   OGGUVS_FMT_ARGBDIB   8 bits per component, stored BGRA, rows stored bottom
                              */
 
-                            width = Common.Binary.Read16(startPage.Data, 12, !BitConverter.IsLittleEndian);
-                            height = Common.Binary.Read16(startPage.Data, 14, !BitConverter.IsLittleEndian);
-                            rate = Common.Binary.Read64(startPage.Data, 20, !BitConverter.IsLittleEndian);
+                            width = Common.Binary.Read16(startPage.Data, 12, Media.Common.Binary.IsBigEndian);
+                            height = Common.Binary.Read16(startPage.Data, 14, Media.Common.Binary.IsBigEndian);
+                            rate = Common.Binary.Read64(startPage.Data, 20, Media.Common.Binary.IsBigEndian);
 
                             //timebase @ 28
 
                             //Set BitDepth if possible
-                            switch (Common.Binary.ReadU32(startPage.Data, 40, !BitConverter.IsLittleEndian))
+                            switch (Common.Binary.ReadU32(startPage.Data, 40, Media.Common.Binary.IsBigEndian))
                             {
                                 case 0x80808081: //OGGUVS_FMT_RGB24DIB
                                 case 0x80808082: //OGGUVS_FMT_RGB32DIB
@@ -1116,7 +1067,7 @@ namespace Media.Containers.Ogg
                             //Todo, Double check these calulcations.
                             //Might need to adjust per codec..
 
-                            duration = Math.Max(sampleCount / rate, (duration / Utility.MicrosecondsPerMillisecond) - sampleCount / rate);
+                            duration = Math.Max(sampleCount / rate, (duration / Media.Common.Extensions.TimeSpan.TimeSpanExtensions.MicrosecondsPerMillisecond) - sampleCount / rate);
 
                             //Usually closer to actual time unless the above was greater
                             //duration /= 1000;
@@ -1126,6 +1077,85 @@ namespace Media.Containers.Ogg
                         }
                 }
 
+                // Process Vorbis Comments for the page if found.
+                IEnumerable<Node> infoPages;
+
+                //If the stream had any info pages parse them
+                if (m_InfoPages.TryGetValue(serialNumber, out infoPages)) foreach (var infoPage in infoPages)
+                {
+                    //Check for vorbis style comments
+                    string vorbis = System.Text.Encoding.UTF8.GetString(infoPage.Data, 1, 6);
+
+                    if (string.Compare(vorbis, "vorbis", false) != 0) continue;
+
+                    int offset = 7;
+
+                    //Read Vendor Length
+                    int vendorLength = Common.Binary.Read32(infoPage.Data, offset, Media.Common.Binary.IsBigEndian);
+
+                    offset += 4;
+
+                    offset += vendorLength;
+
+                    //Determine if there is a comment list
+                    if (vendorLength > 0 && offset + 4 < infoPage.DataSize)
+                    {
+                        //Read User Comment List
+                        int userCommentListLength = Common.Binary.Read32(infoPage.Data, offset, Media.Common.Binary.IsBigEndian);
+
+                        //Move the offset
+                        offset += 4;
+
+                        //Read User Comment List if available
+                        if (userCommentListLength > 0)
+                        {
+                            //While there is data to consume
+                            while (offset + 4 < infoPage.DataSize)
+                            {
+
+                                //Read the item length
+                                int itemLength = Common.Binary.Read32(infoPage.Data, offset, Media.Common.Binary.IsBigEndian);
+
+                                //Move the offset
+                                offset += 4;
+
+                                //Invalid entry.
+                                if (itemLength < 0 || itemLength + offset > infoPage.DataSize) continue;
+
+                                //Get the string
+                                string item = System.Text.Encoding.UTF8.GetString(infoPage.Data, offset, itemLength);
+
+                                //Split it
+                                string[] parts = item.Split((char)Common.ASCII.EqualsSign);
+
+                                //If there are 2 parts decide what to do.
+                                if (parts.Length > 1)
+                                {
+                                    switch (parts[0].ToLowerInvariant())
+                                    {
+                                        //case "lwing_gain":
+                                        //    {
+                                        //        mediaType = Sdp.MediaType.audio;
+                                        //        rate = double.Parse(parts[1]);
+                                        //        break;
+                                        //    }
+                                        case "title":
+                                            {
+                                                title = parts[1];
+                                                break;
+                                            }
+                                        default: break;
+                                    }
+                                }
+
+                                //Move the offset
+                                offset += itemLength;
+                            }
+                        }
+                    }
+                }
+
+                //Create the track
                 Track created = new Track(startPage, title,
                     //Serial Number
                       serialNumber,
@@ -1136,9 +1166,9 @@ namespace Media.Containers.Ogg
                     //Width Height
                        width, height,
                     //Start Time (Gainule Position from startPage)
-                      TimeSpan.FromMilliseconds(Common.Binary.Read64(startPage.Identifier, 6, !BitConverter.IsLittleEndian)), 
+                      TimeSpan.FromMilliseconds(Common.Binary.Read64(startPage.Identifier, 6, Media.Common.Binary.IsBigEndian)), 
                     //Duration
-                      duration < 0 ? Media.Utility.InfiniteTimeSpan : TimeSpan.FromSeconds(duration),
+                      duration < 0 ? Media.Common.Extensions.TimeSpan.TimeSpanExtensions.InfiniteTimeSpan : TimeSpan.FromSeconds(duration),
                     //Framerate mediaType
                       rate, mediaType,
                     //Codec, channels bitDepth

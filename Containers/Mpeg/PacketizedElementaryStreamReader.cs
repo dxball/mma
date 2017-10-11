@@ -40,6 +40,7 @@ using System.Linq;
 namespace Media.Containers.Mpeg
 {
     /// <summary>
+    /// <see href="https://en.wikipedia.org/wiki/Packetized_elementary_stream">Wikipedia Packetized elementary stream</see>
     /// Represents the logic necessary to read a Packetized Elementary Stream.
     /// Packetized Elementary Stream (PES) is a specification in the MPEG-2 Part 1 (Systems) (ISO/IEC 13818-1) and ITU-T H.222.0[1][2] that defines carrying of elementary streams (usually the output of an audio or video encoder) in packets within MPEG program stream and MPEG transport stream.
     /// The elementary stream is packetized by encapsulating sequential data bytes from the elementary stream inside PES packet headers
@@ -61,6 +62,10 @@ namespace Media.Containers.Mpeg
         public PacketizedElementaryStreamReader(Uri source, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(source, access) { }
 
         public PacketizedElementaryStreamReader(System.IO.FileStream source, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(source, access) { }
+
+        public PacketizedElementaryStreamReader(Uri uri, System.IO.Stream source, int bufferSize = 8192) : base(uri, source, null, bufferSize, true) { } 
+
+        //Methods for reading the PES OptionalHeader and StuffingLength...
 
         /// <summary>
         /// Reads 4 bytes from the given stream
@@ -101,7 +106,7 @@ namespace Media.Containers.Mpeg
         /// <returns></returns>
         public static int DecodeLength(byte[] lengthBytes, int offset = 0)
         {
-            return Common.Binary.ReadU16(lengthBytes, offset, BitConverter.IsLittleEndian);
+            return Common.Binary.ReadU16(lengthBytes, offset, Common.Binary.IsLittleEndian);
         }
 
         /// <summary>
@@ -151,23 +156,31 @@ namespace Media.Containers.Mpeg
             }
         }
 
+        //Entry {esId, { esType, esData } }
         protected System.Collections.Concurrent.ConcurrentDictionary<byte, Tuple<byte, byte[]>> m_ProgramStreams = new System.Collections.Concurrent.ConcurrentDictionary<byte, Tuple<byte, byte[]>>();
 
         protected virtual void ParseProgramStreamMap(Container.Node node)
         {
             if (node.Identifier[3] != Mpeg.StreamTypes.ProgramStreamMap) return;
 
+            int dataLength = node.Data.Length;
+
+            if (dataLength < 4) return;
+
             byte mapId = node.Data[0];
 
             byte reserved = node.Data[1];
 
-            ushort infoLength = Common.Binary.ReadU16(node.Data, 2, BitConverter.IsLittleEndian);
+            ushort infoLength = Common.Binary.ReadU16(node.Data, 2, Common.Binary.IsLittleEndian);
 
-            ushort mapLength = Common.Binary.ReadU16(node.Data, 4 + infoLength, BitConverter.IsLittleEndian);
+            ushort mapLength = Common.Binary.ReadU16(node.Data, 4 + infoLength, Common.Binary.IsLittleEndian);
 
             int offset = 4 + infoLength + 2;
 
-            while (mapLength > 4)
+            int crcOffset = dataLength - 4;
+
+            //While data remains in the map
+            while (offset < crcOffset)
             {
                 //Find out the type of item it is
                 byte esType = node.Data[offset++];
@@ -176,13 +189,15 @@ namespace Media.Containers.Mpeg
                 byte esId = node.Data[offset++];
 
                 //find out how long the info is
-                ushort esInfoLength = Common.Binary.ReadU16(node.Data, offset, BitConverter.IsLittleEndian);
+                ushort esInfoLength = Common.Binary.ReadU16(node.Data, offset, Common.Binary.IsLittleEndian);
 
                 //Get a array containing the info
-                byte[] esData = esInfoLength == 0 ? Utility.Empty : node.Data.Skip(offset).Take(esInfoLength).ToArray();
+                byte[] esData = esInfoLength == 0 ? Media.Common.MemorySegment.EmptyBytes : node.Data.Skip(offset).Take(esInfoLength).ToArray();
 
                 //Create the entry
                 var entry = new Tuple<byte, byte[]>(esType, esData);
+
+                //should keep entries until crc is updated if present and then insert.
 
                 //Add it to the ProgramStreams
                 m_ProgramStreams.AddOrUpdate(esId, entry, (id, old) => entry);
@@ -202,6 +217,7 @@ namespace Media.Containers.Mpeg
 
         public override Container.Node Root
         {
+            //Should be ReadNext()
             get { throw new NotImplementedException(); }
         }
 

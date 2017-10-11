@@ -98,21 +98,21 @@ namespace Media.Containers.Nut
         /// <summary>
         /// Defines the start codes used by the container format.
         /// </summary>
-        public enum StartCode : ulong
+        public enum StartCode : long
         {
             Frame = 0,
-            Main = 0x7A561F5F04ADUL + (((ulong)(NutByte << 8) + 'M') << 48),
-            Stream = 0x11405BF2F9DBUL + (((ulong)(NutByte << 8) + 'S') << 48),
-            SyncPoint = 0xE4ADEECA4569UL + (((ulong)(NutByte << 8) + 'K') << 48),
-            Index = 0xDD672F23E64EUL + (((ulong)(NutByte << 8) + 'X') << 48),
-            Info = 0xAB68B596BA78UL  + (((ulong)(NutByte << 8) + 'I') << 48)
+            Main = (long)(0x7A561F5F04ADUL + (((ulong)(NutByte << 8) + 'M') << 48)),
+            Stream = (long)(0x11405BF2F9DBUL + (((ulong)(NutByte << 8) + 'S') << 48)),
+            SyncPoint = (long)(0xE4ADEECA4569UL + (((ulong)(NutByte << 8) + 'K') << 48)),
+            Index = (long)(0xDD672F23E64EUL + (((ulong)(NutByte << 8) + 'X') << 48)),
+            Info = (long)(0xAB68B596BA78UL  + (((ulong)(NutByte << 8) + 'I') << 48))
         }
 
         #region Statics        
 
         public static string ToTextualConvention(byte[] identifier, int offset = 0)
         {
-            return ((StartCode)Common.Binary.ReadU64(identifier, offset, BitConverter.IsLittleEndian)).ToString();
+            return ((StartCode)Common.Binary.ReadU64(identifier, offset, Common.Binary.IsLittleEndian)).ToString();
         }
 
         public static bool IsFrame(Node node)
@@ -152,7 +152,7 @@ namespace Media.Containers.Nut
         {
             if (node == null) throw new ArgumentNullException("node");
 
-            if (!IsFrame(node)) return Utility.Empty;
+            if (!IsFrame(node)) return Media.Common.MemorySegment.EmptyBytes;
 
             return reader.EllisionHeaders[node.Identifier[5]];
         }
@@ -242,6 +242,8 @@ namespace Media.Containers.Nut
 
         public NutReader(System.IO.FileStream source, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(source, access) { }
 
+        public NutReader(Uri uri, System.IO.Stream source, int bufferSize = 8192) : base(uri, source, null, bufferSize, true) { } 
+
         public IEnumerable<Node> ReadTags(long offset, long count, params StartCode[] names)
         {
             long position = Position;
@@ -250,7 +252,7 @@ namespace Media.Containers.Nut
 
             foreach (var tag in this)
             {
-                if (names == null || names.Count() == 0 || names.Contains((StartCode)Common.Binary.ReadU64(tag.Identifier, 0, BitConverter.IsLittleEndian)))
+                if (names == null || names.Count() == 0 || names.Contains((StartCode)Common.Binary.ReadU64(tag.Identifier, 0, Common.Binary.IsLittleEndian)))
                     yield return tag;
 
                 count -= tag.TotalSize;
@@ -312,7 +314,7 @@ namespace Media.Containers.Nut
 
         void ParseFileIdString()
         {
-            if (!string.IsNullOrEmpty(m_FileIdString)) return;
+            if (false == string.IsNullOrEmpty(m_FileIdString)) return;
 
             List<byte> bytes = new List<byte>(24);
 
@@ -349,7 +351,7 @@ namespace Media.Containers.Nut
         {
             get
             {
-                if (!m_MajorVersion.HasValue) ParseMainHeader();
+                if (false == m_MajorVersion.HasValue) ParseMainHeader();
                 return new Version(m_MajorVersion.Value, m_MinorVersion ?? 0);
             }
         }
@@ -362,7 +364,7 @@ namespace Media.Containers.Nut
         {
             get
             {
-                if (!HasMainHeaderFlags) return HeaderFlags.Unknown;
+                if (false == HasMainHeaderFlags) return HeaderFlags.Unknown;
                 return (HeaderFlags)m_MainHeaderFlags.Value;
             }
         }
@@ -371,7 +373,7 @@ namespace Media.Containers.Nut
         {
             get
             {
-                if (!m_StreamCount.HasValue) ParseMainHeader();
+                if (false == m_StreamCount.HasValue) ParseMainHeader();
                 return m_StreamCount.Value;
             }
         }
@@ -380,7 +382,7 @@ namespace Media.Containers.Nut
         {
             get
             {
-                if (!m_MaxDistance.HasValue) ParseMainHeader();
+                if (false == m_MaxDistance.HasValue) ParseMainHeader();
                 return m_MaxDistance.Value;
             }
         }
@@ -389,7 +391,7 @@ namespace Media.Containers.Nut
         {
             get
             {
-                if (!m_EllisionHeaderCount.HasValue) ParseMainHeader();
+                if (false == m_EllisionHeaderCount.HasValue) ParseMainHeader();
                 return m_EllisionHeaderCount.Value;
             }
         }
@@ -548,7 +550,7 @@ namespace Media.Containers.Nut
                 */
                 
                 //The first Ellision Header must be 0
-                m_EllisionHeaders = new List<byte[]>((int)m_EllisionHeaderCount + 1) { Utility.Empty };
+                m_EllisionHeaders = new List<byte[]>((int)m_EllisionHeaderCount + 1) { Media.Common.MemorySegment.EmptyBytes };
 
                 long position = stream.Position;
 
@@ -763,7 +765,7 @@ namespace Media.Containers.Nut
                 //Ensure Key Frame for Eor and that Length is positive
                 if (frameFlags.HasFlag(FrameFlags.EOR))
                 {
-                    if (!frameFlags.HasFlag(FrameFlags.Key)) throw new InvalidOperationException("EOR Frames must be key");
+                    if (false == frameFlags.HasFlag(FrameFlags.Key)) throw new InvalidOperationException("EOR Frames must be key");
 
                     if (length != 0) throw new InvalidOperationException("EOR Frames must have size 0");
                 }
@@ -778,7 +780,7 @@ namespace Media.Containers.Nut
                     //Do this so the Frame can be optionall CRC'd by the Enumerator if CheckCRC is true
                     //length += 4;
                 }
-                else if (!(HasMainHeaderFlags && !MainHeaderFlags.HasFlag(HeaderFlags.Pipe))
+                else if (false == (HasMainHeaderFlags && false == MainHeaderFlags.HasFlag(HeaderFlags.Pipe))
                     && 
                     length > (2 * MaximumDistance)) throw new InvalidOperationException("frame size > 2 max_distance and no checksum");               
 

@@ -33,11 +33,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
  * 
  * v//
  */
-using Media.Container;
+
+
 using System;
-using System.Collections.Generic;
 using System.Linq;
+using System.Collections.Generic;
 using System.Text;
+using Media.Common;
+using Media.Container;
 
 namespace Media.Containers.Matroska
 {
@@ -612,7 +615,7 @@ namespace Media.Containers.Matroska
     /// </summary>
     public class MatroskaReader : MediaFileStream, IMediaContainer
     {
-        const int DefaulTimeCodeScale = (int)Utility.NanosecondsPerMillisecond, DefaultMaxIdSize = 4, DefaultMaxSizeLength = 8;
+        const int DefaulTimeCodeScale = (int)Media.Common.Extensions.TimeSpan.TimeSpanExtensions.NanosecondsPerMillisecond, DefaultMaxIdSize = 4, DefaultMaxSizeLength = 8;
 
         static DateTime BaseDate = new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
@@ -646,10 +649,10 @@ namespace Media.Containers.Matroska
                 int left = id_length - 1;
                 byte[] remainder = new byte[left];
                 reader.Read(remainder, 0, left);
-                return header_byte.Yield().Concat(remainder).ToArray();
+                return Media.Common.Extensions.Linq.LinqExtensions.Yield(header_byte).Concat(remainder).ToArray();
             }
 
-            return header_byte.Yield().ToArray();
+            return Media.Common.Extensions.Linq.LinqExtensions.Yield(header_byte).ToArray();
         }
          //
         static byte[] ReadLength(System.IO.Stream reader, out int length)
@@ -683,15 +686,15 @@ namespace Media.Containers.Matroska
                 int left = size_length - 1;
                 byte[] remainder = new byte[left];
                 reader.Read(remainder, 0, left);
-                return header_byte.Yield().Concat(remainder).ToArray();
+                return Media.Common.Extensions.Linq.LinqExtensions.Yield(header_byte).Concat(remainder).ToArray();
             }
 
-            return header_byte.Yield().ToArray();
+            return Media.Common.Extensions.Linq.LinqExtensions.Yield(header_byte).ToArray();
         }
 
         public static string ToTextualConvention(byte[] identifier, int offset = 0)
         {
-            return ((Identifier)Common.Binary.Read32(identifier, offset, BitConverter.IsLittleEndian)).ToString(); 
+            return ((Identifier)Common.Binary.Read32(identifier, offset, Common.Binary.IsLittleEndian)).ToString(); 
         }
 
         public MatroskaReader(string filename, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(filename, access) { }
@@ -699,6 +702,8 @@ namespace Media.Containers.Matroska
         public MatroskaReader(Uri source, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(source, access) { }
 
         public MatroskaReader(System.IO.FileStream source, System.IO.FileAccess access = System.IO.FileAccess.Read) : base(source, access) { }
+
+        public MatroskaReader(Uri uri, System.IO.Stream source, int bufferSize = 8192) : base(uri, source, null, bufferSize, true) { } 
 
         public Node ReadElement(Identifier identifier, long position = 0) { return ReadElement((int)identifier, position); }
 
@@ -723,7 +728,7 @@ namespace Media.Containers.Matroska
 
             foreach (var element in this)
             {
-                if (identifiers == null || identifiers .Count () == 0 || identifiers.Contains(Common.Binary.Read32(element.Identifier, 0, BitConverter.IsLittleEndian)))
+                if (identifiers == null || identifiers .Count () == 0 || identifiers.Contains(Common.Binary.Read32(element.Identifier, 0, Common.Binary.IsLittleEndian)))
                 {
                     yield return element;
                     continue;
@@ -749,7 +754,7 @@ namespace Media.Containers.Matroska
 
             rTotal += read;
 
-            long length = Common.Binary.Read64(lengthBytes, 0, BitConverter.IsLittleEndian);
+            long length = Common.Binary.Read64(lengthBytes, 0, Common.Binary.IsLittleEndian);
 
             return new Node(this, identifier, read, Position, length, length <= Remaining);
         }
@@ -764,7 +769,7 @@ namespace Media.Containers.Matroska
 
                 //Decode the Id
                 //Determine what to do to read the next
-                switch ((Identifier)Common.Binary.ReadU32(next.Identifier, 0, BitConverter.IsLittleEndian))
+                switch ((Identifier)Common.Binary.ReadU32(next.Identifier, 0, Common.Binary.IsLittleEndian))
                 {
                     //Some Items are top level and contain children (Only really segment should be listed?)
                     case Identifier.Tracks: //Track is listed for making Parsing Tracks easier for now
@@ -811,7 +816,7 @@ namespace Media.Containers.Matroska
                     {
                         identifer = ReadIdentifier(stream, out read);
 
-                        Identifier found = (Identifier)Common.Binary.ReadInteger(identifer, 0, read, BitConverter.IsLittleEndian);
+                        Identifier found = (Identifier)Common.Binary.ReadInteger(identifer, 0, read, Common.Binary.IsLittleEndian);
 
                         offset += read;
 
@@ -819,7 +824,7 @@ namespace Media.Containers.Matroska
 
                         offset += read;
 
-                        length = Common.Binary.ReadInteger(len, 0, read, !BitConverter.IsLittleEndian);
+                        length = Common.Binary.ReadInteger(len, 0, read, Media.Common.Binary.IsBigEndian);
 
                         //Determine what to do based on the found Identifier
                         switch (found)
@@ -828,25 +833,25 @@ namespace Media.Containers.Matroska
                             case Identifier.EBMLVersion:
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    m_EbmlVersion = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, !BitConverter.IsLittleEndian);
+                                    m_EbmlVersion = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, Media.Common.Binary.IsBigEndian);
                                     goto default;
                                 }
                             case Identifier.EBMLReadVersion:
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    m_EbmlReadVersion = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, !BitConverter.IsLittleEndian);
+                                    m_EbmlReadVersion = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, Media.Common.Binary.IsBigEndian);
                                     goto default;
                                 }
                             case Identifier.EBMLMaxIDLength:
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    m_MaxIDLength = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, !BitConverter.IsLittleEndian);
+                                    m_MaxIDLength = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, Media.Common.Binary.IsBigEndian);
                                     goto default;
                                 }
                             case Identifier.EBMLMaxSizeLength:
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    m_MaxSizeLength = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, !BitConverter.IsLittleEndian);
+                                    m_MaxSizeLength = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, Media.Common.Binary.IsBigEndian);
                                     goto default;
                                 }
                             case Identifier.EBMLDocType:
@@ -858,12 +863,12 @@ namespace Media.Containers.Matroska
                             case Identifier.EBMLDocTypeVersion:
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    m_DocTypeVersion = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, !BitConverter.IsLittleEndian);
+                                    m_DocTypeVersion = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, Media.Common.Binary.IsBigEndian);
                                     goto default;
                                 }
                             case Identifier.EBMLDocTypeReadVersion:
                                 {
-                                    m_DocTypeReadVersion = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, !BitConverter.IsLittleEndian);
+                                    m_DocTypeReadVersion = (int)Common.Binary.ReadInteger(buffer, 0, (int)length, Media.Common.Binary.IsBigEndian);
                                     stream.Read(buffer, 0, (int)length);
                                     goto default;
                                 }
@@ -909,9 +914,9 @@ namespace Media.Containers.Matroska
 
                         offset += read;
 
-                        length = Common.Binary.Read64(len, 0, BitConverter.IsLittleEndian);
+                        length = Common.Binary.Read64(len, 0, Common.Binary.IsLittleEndian);
 
-                        Identifier found = (Identifier)Common.Binary.Read32(identifer, 0, BitConverter.IsLittleEndian);
+                        Identifier found = (Identifier)Common.Binary.Read32(identifer, 0, Common.Binary.IsLittleEndian);
 
                         //Determine what to do based on the found Identifier
                         switch (found)
@@ -919,11 +924,11 @@ namespace Media.Containers.Matroska
                             case Identifier.Duration:
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    //m_Duration = TimeSpan.FromMilliseconds((double)(Common.Binary.ReadInteger(buffer, 0, (int)length, BitConverter.IsLittleEndian) * m_TimeCodeScale * 1000) / 1000000);
+                                    //m_Duration = TimeSpan.FromMilliseconds((double)(Common.Binary.ReadInteger(buffer, 0, (int)length, Common.Binary.IsLittleEndian) * m_TimeCodeScale * 1000) / 1000000);
 
-                                    //m_Duration = TimeSpan.FromSeconds(TimeSpan.FromMilliseconds((Common.Binary.ReadInteger(buffer, 0, (int)length, !BitConverter.IsLittleEndian) / TimeCodeScale) / TimeSpan.TicksPerMillisecond).TotalHours * m_TimeCodeScale);
+                                    //m_Duration = TimeSpan.FromSeconds(TimeSpan.FromMilliseconds((Common.Binary.ReadInteger(buffer, 0, (int)length, Media.Common.Binary.IsBigEndian) / TimeCodeScale) / TimeSpan.TicksPerMillisecond).TotalHours * m_TimeCodeScale);
 
-                                    m_Duration = TimeSpan.FromTicks(Common.Binary.ReadInteger(buffer, 0, (int)length, !BitConverter.IsLittleEndian) / m_TimeCodeScale);
+                                    m_Duration = TimeSpan.FromTicks(Common.Binary.ReadInteger(buffer, 0, (int)length, Media.Common.Binary.IsBigEndian) / m_TimeCodeScale);
 
                                     offset += length;
                                     continue;
@@ -931,14 +936,14 @@ namespace Media.Containers.Matroska
                             case Identifier.DateUTC:
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    m_Created = BaseDate.AddMilliseconds(Utility.NanosecondsPerSecond / Common.Binary.ReadInteger(buffer, 0, (int)length, BitConverter.IsLittleEndian));
+                                    m_Created = BaseDate.AddMilliseconds(Media.Common.Extensions.TimeSpan.TimeSpanExtensions.NanosecondsPerSecond / Common.Binary.ReadInteger(buffer, 0, (int)length, Common.Binary.IsLittleEndian));
                                     offset += length;
                                     continue;
                                 }
                             case Identifier.TimeCodeScale:
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    m_TimeCodeScale = Common.Binary.ReadInteger(buffer, 0, (int)length, BitConverter.IsLittleEndian);
+                                    m_TimeCodeScale = Common.Binary.ReadInteger(buffer, 0, (int)length, Common.Binary.IsLittleEndian);
                                     offset += length;
                                     continue;
                                 }
@@ -1152,7 +1157,7 @@ namespace Media.Containers.Matroska
 
             //CodecID, CodecName?
 
-            byte[] codecIndication = Utility.Empty;
+            byte[] codecIndication = Media.Common.MemorySegment.EmptyBytes;
 
             var tracks = new List<Track>();
 
@@ -1174,7 +1179,7 @@ namespace Media.Containers.Matroska
                     {
                         identifier = ReadIdentifier(stream, out read);
 
-                        Identifier found = (Identifier)Common.Binary.Read32(identifier, 0, BitConverter.IsLittleEndian);
+                        Identifier found = (Identifier)Common.Binary.Read32(identifier, 0, Common.Binary.IsLittleEndian);
 
                         offset += read;
 
@@ -1182,7 +1187,7 @@ namespace Media.Containers.Matroska
 
                         offset += read;
 
-                        length = Common.Binary.Read64(len, 0, BitConverter.IsLittleEndian);
+                        length = Common.Binary.Read64(len, 0, Common.Binary.IsLittleEndian);
 
                         //Determine what to do based on the found Identifier
                         switch (found)
@@ -1209,10 +1214,10 @@ namespace Media.Containers.Matroska
                             case Identifier.VideoColourSpace:
                                 {
 
-                                    //length == 1 !BitConverter.IsLittleEndian : BitConverter.IsLittleEndian? 
+                                    //length == 1 Media.Common.Binary.IsBigEndian : Common.Binary.IsLittleEndian? 
 
                                     stream.Read(buffer, 0, (int)length);
-                                    bitsPerSample = (byte)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && BitConverter.IsLittleEndian);
+                                    bitsPerSample = (byte)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && Common.Binary.IsLittleEndian);
 
                                     //Maybe a fourCC indicating the sub sampling type...?
 
@@ -1235,7 +1240,7 @@ namespace Media.Containers.Matroska
                             case Identifier.TrackNumber:
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    trackId = (ulong)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && BitConverter.IsLittleEndian);
+                                    trackId = (ulong)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && Common.Binary.IsLittleEndian);
                                     offset += length;
                                     continue;
                                 }
@@ -1244,16 +1249,16 @@ namespace Media.Containers.Matroska
                                     //Really the sample Rate?
                                     //Number of nanoseconds (not scaled via TimecodeScale) per frame ('frame' in the  sense -- one element put into a (Simple)Block).
                                     stream.Read(buffer, 0, (int)length);
-                                    if (mediaType == Sdp.MediaType.video)rate =  Utility.NanosecondsPerSecond / (double)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && BitConverter.IsLittleEndian);
-                                    else rate = (double)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && BitConverter.IsLittleEndian);
+                                    if (mediaType == Sdp.MediaType.video)rate =  Media.Common.Extensions.TimeSpan.TimeSpanExtensions.NanosecondsPerSecond / (double)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && Common.Binary.IsLittleEndian);
+                                    else rate = (double)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && Common.Binary.IsLittleEndian);
                                     offset += length;
                                     continue;
                                 }
                             case Identifier.VideoFrameRate: //DEPRECATED
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    rate = (double)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && BitConverter.IsLittleEndian);
-                                    trackDuration = (ulong)(Utility.NanosecondsPerSecond * rate);
+                                    rate = (double)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && Common.Binary.IsLittleEndian);
+                                    trackDuration = (ulong)(Media.Common.Extensions.TimeSpan.TimeSpanExtensions.NanosecondsPerSecond * rate);
                                     offset += length;
                                     continue;
                                 }
@@ -1263,7 +1268,7 @@ namespace Media.Containers.Matroska
                                     //Really the sample Rate?
                                     //Number of nanoseconds (not scaled via TimecodeScale) per frame ('frame' in the  sense -- one element put into a (Simple)Block).
                                     stream.Read(buffer, 0, (int)length);
-                                    timeCodeScale = (ulong)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && BitConverter.IsLittleEndian);
+                                    timeCodeScale = (ulong)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && Common.Binary.IsLittleEndian);
                                     offset += length;
                                     continue;
                                 }
@@ -1271,7 +1276,7 @@ namespace Media.Containers.Matroska
                                 {
                                     //Ensure this is read correctly....
                                     stream.Read(buffer, 0, (int)length);
-                                    rate = BitConverter.Int64BitsToDouble(Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && BitConverter.IsLittleEndian));
+                                    rate = BitConverter.Int64BitsToDouble(Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && Common.Binary.IsLittleEndian));
                                     offset += length;
                                     continue;
                                 }
@@ -1279,21 +1284,21 @@ namespace Media.Containers.Matroska
                                 {
                                     stream.Read(buffer, 0, (int)length);
                                     //Rescale
-                                    rate /= (double)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && BitConverter.IsLittleEndian);
+                                    rate /= (double)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && Common.Binary.IsLittleEndian);
                                     offset += length;
                                     continue;
                                 }
                             case Identifier.VideoPixelWidth:
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    width = (ulong)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && BitConverter.IsLittleEndian);
+                                    width = (ulong)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && Common.Binary.IsLittleEndian);
                                     offset += length;
                                     continue;
                                 }
                             case Identifier.VideoPixelHeight:
                                 {
                                     stream.Read(buffer, 0, (int)length);
-                                    height = (ulong)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && BitConverter.IsLittleEndian);
+                                    height = (ulong)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && Common.Binary.IsLittleEndian);
                                     offset += length;
                                     continue;
                                 }
@@ -1301,7 +1306,7 @@ namespace Media.Containers.Matroska
                                 {
                                     //A value to add to the Block's Timestamp. This can be used to adjust the playback offset of a track.
                                     stream.Read(buffer, 0, (int)length);
-                                    startTime = (ulong)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && BitConverter.IsLittleEndian);
+                                    startTime = (ulong)Common.Binary.ReadInteger(buffer, 0, (int)length, length > 1 && Common.Binary.IsLittleEndian);
                                     offset += length;
                                     break;
                                 }
@@ -1349,7 +1354,7 @@ namespace Media.Containers.Matroska
                             {
                                 identifier = ReadIdentifier(cueStream, out read);
 
-                                Identifier found = (Identifier)Common.Binary.Read32(identifier, 0, BitConverter.IsLittleEndian);
+                                Identifier found = (Identifier)Common.Binary.Read32(identifier, 0, Common.Binary.IsLittleEndian);
 
                                 cueOffset += read;
 
@@ -1357,7 +1362,7 @@ namespace Media.Containers.Matroska
 
                                 cueOffset += read;
 
-                                length = Common.Binary.Read64(len, 0, BitConverter.IsLittleEndian);
+                                length = Common.Binary.Read64(len, 0, Common.Binary.IsLittleEndian);
 
                                 //Determine what to do based on the found Identifier
                                 switch (found)
@@ -1367,7 +1372,7 @@ namespace Media.Containers.Matroska
                                         {
                                             ++sampleCount;
                                             cueStream.Read(buffer, 0, (int)length);
-                                            trackDuration += Media.Common.Binary.ReadU32(buffer, 0, BitConverter.IsLittleEndian);
+                                            trackDuration += Media.Common.Binary.ReadU32(buffer, 0, Common.Binary.IsLittleEndian);
                                             cueOffset += length;
                                             continue;
                                         }
@@ -1382,7 +1387,7 @@ namespace Media.Containers.Matroska
                         }
                     }
 
-                    Track track = new Track(trackEntryElement, trackName, (int)trackId, m_Created.Value, m_Modified.Value, (int)sampleCount, (int)height, (int)width, TimeSpan.Zero, TimeSpan.FromMilliseconds((trackDuration / Utility.NanosecondsPerSecond) * timeCodeScale / TimeSpan.TicksPerMillisecond), rate, mediaType, codecIndication, channels, bitsPerSample);
+                    Track track = new Track(trackEntryElement, trackName, (int)trackId, m_Created.Value, m_Modified.Value, (int)sampleCount, (int)height, (int)width, TimeSpan.Zero, TimeSpan.FromMilliseconds((trackDuration / Media.Common.Extensions.TimeSpan.TimeSpanExtensions.NanosecondsPerSecond) * timeCodeScale / TimeSpan.TicksPerMillisecond), rate, mediaType, codecIndication, channels, bitsPerSample);
 
                     yield return track;
 

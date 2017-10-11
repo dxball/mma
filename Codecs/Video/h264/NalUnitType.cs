@@ -8,19 +8,24 @@ namespace Media.Codecs.Video.H264
 {
     public static class NalUnitType
     {
-        public static byte[] StartCode = new byte[] { 0x00, 0x00, 0x01 };
+        //Mpeg start codes
+        public static byte[] StartCodePrefix = new byte[] { 0x00, 0x00, 0x01 };
 
         public const byte Unknown = 0;
 
-        public const byte Slice = 1;
+        //IsVideoCodingLayer => True
 
-        public const byte PartitionA = 2;
+        public const byte CodedSlice = 1;
 
-        public const byte PartitionB = 3;
+        public const byte DataPartitionA = 2;
 
-        public const byte PartitionC = 4;
+        public const byte DataPartitionB = 3;
 
-        public const byte IDRSlice = 5;
+        public const byte DataPartitionC = 4;
+
+        public const byte InstantaneousDecoderRefresh = 5;
+
+        //NonVideoCodingLayer
 
         public const byte SupplementalEncoderInformation = 6;
 
@@ -46,6 +51,9 @@ namespace Media.Codecs.Video.H264
 
         public const byte SliceExtension = 20;
 
+        //21 SliceExtensionForDepthView
+
+        //24 DependencyRepresentationDelimiter in BluRay
         public const byte SingleTimeAggregationA = 24;
 
         public const byte SingleTimeAggregationB = 25;
@@ -62,6 +70,71 @@ namespace Media.Codecs.Video.H264
 
         public const byte Reserved = 31;
 
+        //Todo, non ref
+
+        /// <summary>
+        /// Gets a value which indicats if the nalType if reserved.
+        /// </summary>
+        /// <param name="nalType"></param>
+        /// <returns></returns>
+        public static bool IsReserved(ref byte nalType)
+        {
+            switch (nalType)
+            {
+                case Reserved:
+                //nalType >= 16 && nalType <= 18
+                case 16:
+                case 17:
+                case 18:
+                //nalType >= 22 && nalType <= 23
+                case 22:
+                case 23:
+                    return true;
+                default: return false;
+            }
+
+            //return nalType == Reserved || nalType >= 16 && nalType <= 18 || nalType >= 22 && nalType <= 23;
+        }
+
+        //Todo, non ref
+
+        /// <summary>
+        /// Gets a value which indicates if the nalType is an Access Unit
+        /// </summary>
+        /// <param name="nalType"></param>
+        /// <returns></returns>
+        public static bool IsAccessUnit(ref byte nalType)
+        {
+            switch (nalType)
+            {
+                case CodedSlice:
+                case DataPartitionA:
+                case DataPartitionB:
+                case DataPartitionC:
+                case InstantaneousDecoderRefresh:
+                    return true;
+                default: return false;
+            }
+        }
+
+        [CLSCompliant(false)]
+        public static bool IsReserved(byte nalType) { return IsReserved(ref nalType); }
+
         public const byte NonInterleavedMultiTimeAggregation = Reserved;
+
+        public static bool IsSlice(ref byte nalType)
+        {
+            switch (nalType)
+            {
+                case CodedSlice:
+                case DataPartitionA:
+                case InstantaneousDecoderRefresh:
+                    return true;
+                default: return false;
+            }
+        }
+
+        [CLSCompliant(false)]
+        public static bool IsSlice(byte nalType) { return IsSlice(ref nalType); }
     }
 }

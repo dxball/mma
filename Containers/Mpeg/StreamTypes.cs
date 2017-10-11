@@ -56,6 +56,10 @@ namespace Media.Containers.Mpeg
 
         public const byte StreamingText = 0x0D;
 
+        public const byte SequenceHeader = 0xB3;
+
+        public const byte Extension = 0xB5;
+
         public const byte ProgramEnd = 0xB9;
 
         public const byte PackHeader = 0xBA;
@@ -110,7 +114,7 @@ namespace Media.Containers.Mpeg
             if (IsMpeg1or2VideoStream(b)) return "Video";
             if (IsReserverd(b)) return "Reserved";
             if (IsUserPrivate(b)) return "UserPrivate";
-            return Utility.Unknown;
+            return Media.Common.Extensions.String.StringExtensions.UnknownString;
         }
 
         static StreamTypes()
